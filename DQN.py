@@ -65,7 +65,7 @@ EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 1000
 DECAY_FACTOR = -1.0 / EPS_DECAY
-TAU = 0.005
+TAU = 0.05
 
 
 class DQNAgent:
@@ -155,7 +155,7 @@ class DQNAgent:
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        # torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100) # blegh
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100) # blugh
         self.optimizer.step()
 
     def model_update(self, state, action, next_state, reward):

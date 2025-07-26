@@ -1,18 +1,17 @@
-import ale_py
 import gymnasium as gym
 import torch
 import itertools
 
 import DQN
 import plotting
+from gym_uno.envs import UnoEnv  
 
 # Setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("Using device:", device)
 
-gym.register_envs(ale_py)
-game = "CartPole-v1"
+game = "Uno-v0"
 env = gym.make(game)
 
 observation, info = env.reset()
