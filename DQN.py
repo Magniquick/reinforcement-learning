@@ -131,22 +131,27 @@ class DQNAgent:
         # for each batch state according to policy_net
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1).values
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
+        # Double DQN next‐state values
         next_state_values = torch.zeros(BATCH_SIZE, device=self.device)
         with torch.no_grad():
-            next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * GAMMA) + reward_batch
+            # 1) select best actions by policy_net
+            next_q_policy = self.policy_net(non_final_next_states)  # [N, A]
+            next_actions = next_q_policy.argmax(dim=1, keepdim=True)  # [N, 1]
+
+            # 2) evaluate them by target_net
+            next_q_target = self.target_net(non_final_next_states)  # [N, A]
+            target_values = next_q_target.gather(1, next_actions).squeeze(1)  # [N]
+
+            # put them back into full batch tensor
+            next_state_values[non_final_mask] = target_values
+
+        # TD target
+        expected_state_action_values = reward_batch + (GAMMA * next_state_values)
 
         # Compute Huber loss
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
-        # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
@@ -166,8 +171,8 @@ class DQNAgent:
         if self.steps_done % 1_000 == 0:
             self.target_net.load_state_dict(policy_net_state_dict)
         else:
+            target_net_state_dict = self.target_net.state_dict()
             for key in policy_net_state_dict:
-                target_net_state_dict = self.target_net.state_dict()
                 target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (1 - TAU)
             self.target_net.load_state_dict(target_net_state_dict)
 
