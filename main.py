@@ -1,17 +1,19 @@
+import itertools
+
+import gym_kuhn_poker
 import gymnasium as gym
 import torch
-import itertools
 
 import DQN
 import plotting
-from gym_uno.envs import UnoEnv  
 
 # Setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print("Using device:", device)
 
-game = "Uno-v0"
+game = "KuhnPoker-v0"
+
 env = gym.make(game)
 
 observation, info = env.reset()

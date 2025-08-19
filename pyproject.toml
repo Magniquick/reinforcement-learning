@@ -1,19 +1,18 @@
 [project]
 name = "reinforcement-learning"
 version = "0.1.0"
-description = "Add your description here"
+description = "Double DQN implementation for Kuhn Poker."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "ale-py>=0.11.1",
-    "gymnasium[atari]>=1.1.1",
+    "gym-kuhn-poker",
+    "gymnasium>=1.2.0",
     "ipykernel>=6.29.5",
     "matplotlib>=3.10.3",
     "pygame>=2.6.1",
     "pyqt5>=5.15.11",
     "torch",
     "torchsummary>=1.5.1",
-    "uno",
 ]
 
 [[tool.uv.index]]
@@ -24,4 +23,4 @@ url = "https://pypi.org/simple"
 default = true
 
 [tool.uv.sources]
-uno = { git = "https://github.com/Magniquick/uno" }
+gym-kuhn-poker = { path = "../gym-kuhn-poker" }

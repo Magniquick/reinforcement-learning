@@ -1,10 +1,13 @@
 # From https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 # Uses hyperparamters and more code from there
+# Updated to use Double DQN.
 
 import math
 import random
 from collections import deque, namedtuple
+from typing import Iterable
 
+import gymnasium
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,24 +19,27 @@ Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"
 
 
 class ReplayMemory(object):
-
-    def __init__(self, capacity):
-        self.memory = deque([], maxlen=capacity)
-
+    def __init__(self, capacity: int):
+        self.memory: deque[Transition] = deque([], maxlen=capacity)
+    
     def push(self, *args):
         """Save a transition"""
         self.memory.append(Transition(*args))
 
-    def sample(self, batch_size):
+    def extend(self, transitions: Iterable[Transition]):
+        """Save a list of transitions"""
+        self.memory.extend(transitions)
+
+    def sample(self, batch_size: int) -> list[Transition]:
         return random.sample(self.memory, batch_size)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.memory)
 
 
 # the actual DQN model:
 class DQN(nn.Module):
-    def __init__(self, n_observations, n_actions):
+    def __init__(self, n_observations: int, n_actions: int):
         super(DQN, self).__init__()
         self.net = torch.nn.Sequential(
             nn.Linear(n_observations, 512),
@@ -45,8 +51,8 @@ class DQN(nn.Module):
             nn.Linear(128, n_actions),
         )
 
-    def forward(self, x):
-        return self.net.forward(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
 
     def save_state(self, name="dqn_model.pth"):
         """Save the model state to a file."""
@@ -63,13 +69,14 @@ BATCH_SIZE = 512
 GAMMA = 0.99
 EPS_START = 0.9
 EPS_END = 0.05
-EPS_DECAY = 1000
+EPS_DECAY = 1_000
 DECAY_FACTOR = -1.0 / EPS_DECAY
 TAU = 0.05
+HARD_UPDATE_STEPS = 1_000
 
 
 class DQNAgent:
-    def __init__(self, n_observations, n_actions, device, load_model=False):
+    def __init__(self, n_observations: int, n_actions: int, device: torch.device, load_model: bool = False):
         self.device = device
         # Initialize the DQN model, target model, optimizer, and replay memory
         self.policy_net = DQN(n_observations, n_actions).to(device)
@@ -91,7 +98,7 @@ class DQNAgent:
         self.optimizer = optim.AdamW(self.policy_net.parameters(), amsgrad=True, fused=True)
         self.memory = ReplayMemory(10_000)
 
-    def select_action(self, env, state):
+    def select_action(self, env: gymnasium.Env, state: torch.Tensor) -> torch.Tensor:
         sample = random.random()
         eps_threshold = EPS_END + (EPS_START - EPS_END) * math.exp(self.steps_done * DECAY_FACTOR)
         self.steps_done += 1
@@ -105,11 +112,13 @@ class DQNAgent:
             return torch.tensor([[env.action_space.sample()]], device=self.device, dtype=torch.long)
 
     def greedy_select_action(self, state):
-        return self.policy_net(state).max(1).indices.view(1, 1)
+        with torch.no_grad():
+            return self.policy_net(state).max(1).indices.view(1, 1)
 
     def optimize_model(self):
         if len(self.memory) < BATCH_SIZE:
             return
+        
         transitions = self.memory.sample(BATCH_SIZE)
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
@@ -155,26 +164,34 @@ class DQNAgent:
         self.optimizer.zero_grad()
         loss.backward()
         # In-place gradient clipping
-        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100) # blugh
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
 
-    def model_update(self, state, action, next_state, reward):
-        # Store the transition in memory
-        self.memory.push(state, action, next_state, torch.tensor([reward], device=self.device))
-
-        # Perform one step of the optimization (on the policy network)
-        self.optimize_model()
-
-        # Soft update of the target network's weights (Polyak Averaging)
-        # θ′ ← τ θ + (1 −τ )θ′
+    def update_weights(self):
+        """Update the weights of the target network."""
         policy_net_state_dict = self.policy_net.state_dict()
-        if self.steps_done % 1_000 == 0:
+        if self.steps_done % HARD_UPDATE_STEPS == 0: # hard update every 1_000 steps
             self.target_net.load_state_dict(policy_net_state_dict)
         else:
+            # Soft update of the target network's weights (Polyak Averaging)
+            # θ′ ← τ θ + (1 −τ )θ′
             target_net_state_dict = self.target_net.state_dict()
             for key in policy_net_state_dict:
                 target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (1 - TAU)
             self.target_net.load_state_dict(target_net_state_dict)
+
+    def model_update(self):
+        # Perform one step of the optimization (on the policy network)
+        self.optimize_model()
+        self.update_weights()
+
+    def push_to_memory(self, state, action, next_state, reward):
+        """Push a transition to the replay memory."""
+        self.memory.push(state, action, next_state, torch.tensor([reward], device=self.device))
+
+    def batch_save_transitions(self, batch: list[Transition]):
+        """Save a batch of transitions to memory."""
+        self.memory.memory.extend(batch)
 
     def save_state(self):
         """Save the model state to a file."""
